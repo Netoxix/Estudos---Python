@@ -1,0 +1,76 @@
+import openpyxl as xl
+import pdfplumber
+import os
+
+# Criando um novo arquivo Excel
+novo_excel = xl.Workbook()
+
+# Removendo a aba padrão criada automaticamente
+if 'Sheet' in novo_excel.sheetnames:
+    std = novo_excel['Sheet']
+    novo_excel.remove(std)
+
+# Caminho da pasta onde estão os PDFs
+caminho_pdfs = 'pdfs'
+
+# Verifica se a pasta de PDFs existe
+if not os.path.exists(caminho_pdfs):
+    raise FileNotFoundError(f"A pasta '{caminho_pdfs}' não foi encontrada.")
+
+# Contador global de abas
+contador_aba = 1
+
+# Buscando arquivos PDF na pasta
+for arquivo in os.listdir(caminho_pdfs):
+    if arquivo.lower().endswith('.pdf'):
+        try:
+            # Abre o PDF
+            pdf = pdfplumber.open(os.path.join(caminho_pdfs, arquivo))
+            numero_paginas = len(pdf.pages)
+
+            # Processando cada página do PDF
+            for i in range(numero_paginas):
+                pagina = pdf.pages[i]
+                dados = pagina.extract_table()
+
+                # Verifica se a tabela foi extraída
+                if not dados:
+                    # Tenta extrair texto como alternativa
+                    texto = pagina.extract_text()
+                    if texto:
+                        dados = [[linha] for linha in texto.split('\n')]
+                    else:
+                        with open('log_erros.txt', 'a') as log:
+                            log.write(f'Nenhuma tabela ou texto extraído na página {i+1} do arquivo: {arquivo}\n')
+                        continue  # Pula para a próxima página se não houver dados
+
+                # Nomeia a aba de forma sequencial
+                nome_aba = f'Page_{contador_aba}'
+                contador_aba += 1
+
+                # Cria uma nova aba para cada página do PDF
+                nova_aba = novo_excel.create_sheet(title=nome_aba)
+
+                # Adiciona os dados à aba
+                for dado in dados:
+                    dado = [str(item) if item is not None else None for item in dado]
+                    nova_aba.append(dado)
+
+            # Fecha o PDF
+            pdf.close()
+
+        except Exception as e:
+            # Registra o erro no log com mais detalhes
+            with open('log_erros.txt', 'a') as log:
+                log.write(f'Aconteceu um erro ao extrair informações do arquivo: {arquivo}.\n')
+                log.write(f'Página: {i+1}\n')
+                log.write(f'Erro: {e}\n')
+
+# Salvando o novo arquivo Excel
+try:
+    novo_excel.save("Dados_Extraidos.xlsx")
+    print("Arquivo 'Dados_Extraidos.xlsx' criado com sucesso!")
+except Exception as e:
+    print(f"Erro ao salvar o arquivo Excel: {e}")
+finally:
+    novo_excel.close()
